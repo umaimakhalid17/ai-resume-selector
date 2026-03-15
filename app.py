@@ -9,44 +9,32 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 
-# ─────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "resume123"
 
 st.set_page_config(page_title="AI Resume Selector", page_icon="🤖", layout="wide")
 
-# ─────────────────────────────────────────
-# LOAD BERT MODEL
-# ─────────────────────────────────────────
 @st.cache_resource
 def load_model():
     return SentenceTransformer("all-MiniLM-L6-v2")
 
 model = load_model()
 
-# ─────────────────────────────────────────
-# GOOGLE SHEETS CONNECTION
-# ─────────────────────────────────────────
 @st.cache_resource
-def get_google_sheet():
+def get_client():
     scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(creds)
-    return client
+    return gspread.authorize(creds)
 
 def get_candidates_sheet():
-    client = get_google_sheet()
-    return client.open("ai-resume-selector").worksheet("Candidates")
+    return get_client().open("ai-resume-selector").worksheet("Candidates")
 
 def get_jd_sheet():
-    client = get_google_sheet()
-    return client.open("ai-resume-selector").worksheet("JobDescription")
+    return get_client().open("ai-resume-selector").worksheet("JobDescription")
 
 def save_job_description(jd):
     try:
@@ -55,7 +43,7 @@ def save_job_description(jd):
         sheet.append_row(["Job Description"])
         sheet.append_row([jd])
     except Exception as e:
-        st.error(f"❌ Error saving job description: {e}")
+        st.error(f"Error saving job description: {e}")
 
 def load_job_description():
     try:
@@ -67,9 +55,6 @@ def load_job_description():
     except:
         return ""
 
-# ─────────────────────────────────────────
-# HELPER FUNCTIONS
-# ─────────────────────────────────────────
 def clean_text(text):
     text = str(text).lower()
     text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
@@ -99,20 +84,13 @@ def get_match_score(resume_text, job_description):
     score = cosine_similarity(jd_embedding, resume_embedding).flatten()[0]
     return round(float(score) * 100, 2)
 
-# ─────────────────────────────────────────
-# SESSION STATE
-# ─────────────────────────────────────────
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# ─────────────────────────────────────────
-# CANDIDATE PAGE
-# ─────────────────────────────────────────
 def candidate_page():
     st.title("📄 Submit Your CV")
     st.markdown("### Welcome! Please fill in your details and upload your resume.")
 
-    # Load JD from Google Sheets
     jd = load_job_description()
     if jd:
         st.info(f"📋 **Current Job Opening:**\n\n{jd}")
@@ -159,9 +137,6 @@ def candidate_page():
                 except Exception as e:
                     st.error(f"❌ Error submitting CV: {e}")
 
-# ─────────────────────────────────────────
-# ADMIN LOGIN PAGE
-# ─────────────────────────────────────────
 def login_page():
     st.title("🔐 Admin Login")
     st.markdown("Only the hiring manager can access this panel.")
@@ -177,11 +152,8 @@ def login_page():
             else:
                 st.error("❌ Invalid credentials!")
 
-# ─────────────────────────────────────────
-# ADMIN PANEL
-# ─────────────────────────────────────────
 def admin_page():
-    st.title("🤖 AI Resume Selector — Admin Panel")
+    st.title("🤖 AI Resume Selector - Admin Panel")
 
     if st.button("🚪 Logout"):
         st.session_state.logged_in = False
@@ -189,7 +161,6 @@ def admin_page():
 
     st.divider()
 
-    # ── Job Description Manager ──
     st.subheader("📝 Set Job Description")
     current_jd = load_job_description()
 
@@ -209,7 +180,6 @@ def admin_page():
 
     st.divider()
 
-    # ── View All Candidates ──
     st.subheader("🗄️ All Submitted Candidates")
     if st.button("📋 Load Candidates", use_container_width=True):
         with st.spinner("Loading..."):
@@ -222,7 +192,7 @@ def admin_page():
                     db_df = db_df.sort_values("Match Score (%)", ascending=False).reset_index(drop=True)
                     db_df.index += 1
 
-                    st.success(f"🥇 Best Match: **{db_df.iloc[0]['Name']}** — {db_df.iloc[0]['Match Score (%)']}%")
+                    st.success(f"Best Match: {db_df.iloc[0]['Name']} - {db_df.iloc[0]['Match Score (%)']}%")
 
                     st.dataframe(
                         db_df[["Name", "Email", "CV File", "Upload Time", "Match Score (%)"]],
@@ -245,9 +215,6 @@ def admin_page():
             except Exception as e:
                 st.error(f"❌ Error loading candidates: {e}")
 
-# ─────────────────────────────────────────
-# ROUTER
-# ─────────────────────────────────────────
 page = st.sidebar.selectbox(
     "Navigation",
     ["📄 Submit CV", "🔐 Admin Panel"]
@@ -264,14 +231,13 @@ else:
 
 ---
 
-### ⚠️ Create 2 sheets in Google Sheets
-Open your **ai-resume-selector** Google Sheet and create **2 tabs**:
+### ⚠️ Make sure your Google Sheet has 2 tabs:
 
-1. **Candidates** — with headers:
+**Tab 1 — Candidates** with headers in Row 1:
 ```
 Name | Email | CV File | Upload Time | Match Score | Text Preview
 ```
 
-2. **JobDescription** — with headers:
+**Tab 2 — JobDescription** with headers in Row 1:
 ```
 Job Description
