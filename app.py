@@ -5,6 +5,7 @@ import pdfplumber
 import docx
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+from google.oauth2.service_account import Credentials
 
 # ─────────────────────────────────────────
 # CONFIG
@@ -18,10 +19,16 @@ st.set_page_config(page_title="AI Resume Selector", page_icon="🤖", layout="wi
 # LOAD BERT MODEL
 # ─────────────────────────────────────────
 @st.cache_resource
-def load_model():
-    return SentenceTransformer("all-MiniLM-L6-v2")
-
-model = load_model()
+def get_google_sheet():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    sheet = client.open("ai-resume-selector").sheet1
+    return sheet
 
 # ─────────────────────────────────────────
 # HELPER FUNCTIONS
