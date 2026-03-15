@@ -20,39 +20,41 @@ def load_model():
 
 model = load_model()
 
-@st.cache_resource
-def get_client():
-    scope = [
+def get_scope():
+    return [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
+
+def get_client():
     creds_dict = dict(st.secrets["gcp_service_account"])
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    creds = Credentials.from_service_account_info(creds_dict, scopes=get_scope())
     return gspread.authorize(creds)
 
 def get_candidates_sheet():
     return get_client().open("ai-resume-selector").worksheet("Candidates")
 
-def get_jd_sheet():
-    return get_client().open("ai-resume-selector").worksheet("JobDescription")
-
 def save_job_description(jd):
     try:
-        sheet = get_jd_sheet()
+        client = get_client()
+        sheet = client.open("ai-resume-selector").worksheet("JobDescription")
         sheet.clear()
         sheet.append_row(["Job Description"])
         sheet.append_row([jd])
+        return True
     except Exception as e:
         st.error(f"Error saving job description: {e}")
+        return False
 
 def load_job_description():
     try:
-        sheet = get_jd_sheet()
+        client = get_client()
+        sheet = client.open("ai-resume-selector").worksheet("JobDescription")
         data = sheet.get_all_values()
         if len(data) > 1:
             return data[1][0]
         return ""
-    except:
+    except Exception as e:
         return ""
 
 def clean_text(text):
@@ -175,8 +177,9 @@ def admin_page():
         if not new_jd:
             st.warning("⚠️ Job description cannot be empty.")
         else:
-            save_job_description(new_jd)
-            st.success("✅ Job description saved! Candidates will see this immediately.")
+            result = save_job_description(new_jd)
+            if result:
+                st.success("✅ Job description saved! Candidates will see this immediately.")
 
     st.divider()
 
@@ -192,7 +195,7 @@ def admin_page():
                     db_df = db_df.sort_values("Match Score (%)", ascending=False).reset_index(drop=True)
                     db_df.index += 1
 
-                    st.success(f"Best Match: {db_df.iloc[0]['Name']} - {db_df.iloc[0]['Match Score (%)']}%")
+                    st.success(f"🥇 Best Match: {db_df.iloc[0]['Name']} - {db_df.iloc[0]['Match Score (%)']}%")
 
                     st.dataframe(
                         db_df[["Name", "Email", "CV File", "Upload Time", "Match Score (%)"]],
