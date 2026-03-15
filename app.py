@@ -138,7 +138,7 @@ def main_app():
 
             st.success(f"🥇 Best Match: **{results_df.iloc[0]['Candidate']}** — {results_df.iloc[0]['Match Score (%)']}%")
 
-     st.dataframe(results_df, use_container_width=True)
+            st.dataframe(results_df, use_container_width=True)
 
             # ── Bar Chart ──
             st.subheader("📊 Score Comparison")
