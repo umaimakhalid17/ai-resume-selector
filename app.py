@@ -15,14 +15,6 @@ from datetime import datetime
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "resume123"
 
-# ─────────────────────────────────────────
-# JOB DESCRIPTION (SET BY ADMIN)
-# ─────────────────────────────────────────
-JOB_DESCRIPTION = """
-We are looking for a Data Scientist with experience in Python, machine learning,
-data analysis, SQL, pandas, scikit-learn, and data visualization.
-"""
-
 st.set_page_config(page_title="AI Resume Selector", page_icon="🤖", layout="wide")
 
 # ─────────────────────────────────────────
@@ -46,8 +38,34 @@ def get_google_sheet():
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    sheet = client.open("ai-resume-selector").sheet1
-    return sheet
+    return client
+
+def get_candidates_sheet():
+    client = get_google_sheet()
+    return client.open("ai-resume-selector").worksheet("Candidates")
+
+def get_jd_sheet():
+    client = get_google_sheet()
+    return client.open("ai-resume-selector").worksheet("JobDescription")
+
+def save_job_description(jd):
+    try:
+        sheet = get_jd_sheet()
+        sheet.clear()
+        sheet.append_row(["Job Description"])
+        sheet.append_row([jd])
+    except Exception as e:
+        st.error(f"❌ Error saving job description: {e}")
+
+def load_job_description():
+    try:
+        sheet = get_jd_sheet()
+        data = sheet.get_all_values()
+        if len(data) > 1:
+            return data[1][0]
+        return ""
+    except:
+        return ""
 
 # ─────────────────────────────────────────
 # HELPER FUNCTIONS
@@ -73,8 +91,8 @@ def extract_text(file):
         return extract_text_from_docx(file)
     return ""
 
-def get_match_score(resume_text):
-    cleaned_jd = clean_text(JOB_DESCRIPTION)
+def get_match_score(resume_text, job_description):
+    cleaned_jd = clean_text(job_description)
     cleaned_resume = clean_text(resume_text)
     jd_embedding = model.encode([cleaned_jd])
     resume_embedding = model.encode([cleaned_resume])
@@ -93,7 +111,14 @@ if "logged_in" not in st.session_state:
 def candidate_page():
     st.title("📄 Submit Your CV")
     st.markdown("### Welcome! Please fill in your details and upload your resume.")
-    st.info(f"📋 **Current Job Opening:**\n\n{JOB_DESCRIPTION}")
+
+    # Load JD from Google Sheets
+    jd = load_job_description()
+    if jd:
+        st.info(f"📋 **Current Job Opening:**\n\n{jd}")
+    else:
+        st.warning("⚠️ No job description posted yet. Please check back later.")
+        return
 
     st.divider()
 
@@ -119,8 +144,8 @@ def candidate_page():
             with st.spinner("⏳ Submitting your CV..."):
                 try:
                     text = extract_text(uploaded_file)
-                    score = get_match_score(text)
-                    sheet = get_google_sheet()
+                    score = get_match_score(text, jd)
+                    sheet = get_candidates_sheet()
                     sheet.append_row([
                         name,
                         email,
@@ -129,7 +154,7 @@ def candidate_page():
                         score,
                         text[:300]
                     ])
-                    st.success("✅ Your CV has been submitted successfully! We will contact you soon.")
+                    st.success("✅ CV submitted successfully! We will contact you soon.")
                     st.balloons()
                 except Exception as e:
                     st.error(f"❌ Error submitting CV: {e}")
@@ -164,19 +189,32 @@ def admin_page():
 
     st.divider()
 
-    # ── Update Job Description ──
-    st.subheader("📝 Current Job Description")
-    st.info(JOB_DESCRIPTION)
-    st.caption("⚠️ To change the job description, edit JOB_DESCRIPTION in app.py on GitHub.")
+    # ── Job Description Manager ──
+    st.subheader("📝 Set Job Description")
+    current_jd = load_job_description()
+
+    new_jd = st.text_area(
+        "Enter Job Description:",
+        value=current_jd,
+        height=200,
+        placeholder="We are looking for a Data Scientist with Python, ML, SQL..."
+    )
+
+    if st.button("💾 Save Job Description", use_container_width=True):
+        if not new_jd:
+            st.warning("⚠️ Job description cannot be empty.")
+        else:
+            save_job_description(new_jd)
+            st.success("✅ Job description saved! Candidates will see this immediately.")
 
     st.divider()
 
     # ── View All Candidates ──
     st.subheader("🗄️ All Submitted Candidates")
-    if st.button("📋 Load Candidates from Database", use_container_width=True):
+    if st.button("📋 Load Candidates", use_container_width=True):
         with st.spinner("Loading..."):
             try:
-                sheet = get_google_sheet()
+                sheet = get_candidates_sheet()
                 data = sheet.get_all_records()
                 if data:
                     db_df = pd.DataFrame(data)
@@ -184,16 +222,16 @@ def admin_page():
                     db_df = db_df.sort_values("Match Score (%)", ascending=False).reset_index(drop=True)
                     db_df.index += 1
 
-                    # Show best candidate
                     st.success(f"🥇 Best Match: **{db_df.iloc[0]['Name']}** — {db_df.iloc[0]['Match Score (%)']}%")
 
-                    st.dataframe(db_df[["Name", "Email", "CV File", "Upload Time", "Match Score (%)"]], use_container_width=True)
+                    st.dataframe(
+                        db_df[["Name", "Email", "CV File", "Upload Time", "Match Score (%)"]],
+                        use_container_width=True
+                    )
 
-                    # Bar chart
                     st.subheader("📊 Candidate Score Comparison")
                     st.bar_chart(db_df.set_index("Name")["Match Score (%)"])
 
-                    # Download
                     csv = db_df.to_csv(index=False).encode("utf-8")
                     st.download_button(
                         "📥 Download All Candidates CSV",
@@ -205,7 +243,7 @@ def admin_page():
                 else:
                     st.info("📭 No candidates have submitted their CVs yet.")
             except Exception as e:
-                st.error(f"❌ Error loading database: {e}")
+                st.error(f"❌ Error loading candidates: {e}")
 
 # ─────────────────────────────────────────
 # ROUTER
@@ -222,3 +260,18 @@ if page == "🔐 Admin Panel":
         login_page()
 else:
     candidate_page()
+```
+
+---
+
+### ⚠️ Create 2 sheets in Google Sheets
+Open your **ai-resume-selector** Google Sheet and create **2 tabs**:
+
+1. **Candidates** — with headers:
+```
+Name | Email | CV File | Upload Time | Match Score | Text Preview
+```
+
+2. **JobDescription** — with headers:
+```
+Job Description
