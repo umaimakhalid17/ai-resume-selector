@@ -3,9 +3,11 @@ import pandas as pd
 import re
 import pdfplumber
 import docx
+import gspread
+from google.oauth2.service_account import Credentials
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from google.oauth2.service_account import Credentials
+from datetime import datetime
 
 # ─────────────────────────────────────────
 # CONFIG
@@ -19,6 +21,15 @@ st.set_page_config(page_title="AI Resume Selector", page_icon="🤖", layout="wi
 # LOAD BERT MODEL
 # ─────────────────────────────────────────
 @st.cache_resource
+def load_model():
+    return SentenceTransformer("all-MiniLM-L6-v2")
+
+model = load_model()
+
+# ─────────────────────────────────────────
+# GOOGLE SHEETS CONNECTION
+# ─────────────────────────────────────────
+@st.cache_resource
 def get_google_sheet():
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -29,6 +40,19 @@ def get_google_sheet():
     client = gspread.authorize(creds)
     sheet = client.open("ai-resume-selector").sheet1
     return sheet
+
+def save_to_sheet(candidate, score, text, job_desc):
+    try:
+        sheet = get_google_sheet()
+        sheet.append_row([
+            candidate,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            round(float(score), 2),
+            text[:200],
+            job_desc[:200]
+        ])
+    except Exception as e:
+        st.warning(f"⚠️ Could not save to database: {e}")
 
 # ─────────────────────────────────────────
 # HELPER FUNCTIONS
@@ -131,20 +155,21 @@ def main_app():
 
                 scores = rank_resumes(job_description, texts)
 
+                # Save each candidate to Google Sheets
+                for name, text, score in zip(names, texts, scores):
+                    save_to_sheet(name, score, text, job_description)
+
                 results_df = pd.DataFrame({
                     "Rank": range(1, len(names) + 1),
                     "Candidate": names,
                     "Match Score (%)": (scores * 100).round(2),
                 }).sort_values("Match Score (%)", ascending=False).reset_index(drop=True)
-
                 results_df["Rank"] = range(1, len(results_df) + 1)
 
             # ── Results ──
             st.divider()
             st.subheader("🏆 Ranked Candidates")
-
             st.success(f"🥇 Best Match: **{results_df.iloc[0]['Candidate']}** — {results_df.iloc[0]['Match Score (%)']}%")
-
             st.dataframe(results_df, use_container_width=True)
 
             # ── Bar Chart ──
@@ -161,6 +186,29 @@ def main_app():
                 mime="text/csv",
                 use_container_width=True
             )
+
+    # ── View Database ──
+    st.divider()
+    st.subheader("🗄️ Candidate Database")
+    if st.button("📋 Load All Candidates from Database"):
+        with st.spinner("Loading..."):
+            try:
+                sheet = get_google_sheet()
+                data = sheet.get_all_records()
+                if data:
+                    db_df = pd.DataFrame(data)
+                    st.dataframe(db_df, use_container_width=True)
+                    csv = db_df.to_csv(index=False).encode("utf-8")
+                    st.download_button(
+                        "📥 Download Full Database",
+                        data=csv,
+                        file_name="all_candidates.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info("📭 No candidates in database yet.")
+            except Exception as e:
+                st.error(f"❌ Error loading database: {e}")
 
 # ─────────────────────────────────────────
 # ROUTER
