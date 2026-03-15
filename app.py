@@ -227,17 +227,3 @@ if page == "🔐 Admin Panel":
         login_page()
 else:
     candidate_page()
-```
-
----
-
-### ⚠️ Make sure your Google Sheet has 2 tabs:
-
-**Tab 1 — Candidates** with headers in Row 1:
-```
-Name | Email | CV File | Upload Time | Match Score | Text Preview
-```
-
-**Tab 2 — JobDescription** with headers in Row 1:
-```
-Job Description
