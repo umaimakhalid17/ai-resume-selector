@@ -1,0 +1,25 @@
+streamlit
+sentence-transformers
+scikit-learn
+pdfplumber
+python-docx
+torch
+transformers
+```
+
+---
+
+### ▶️ Step 4 — Deploy on Streamlit Cloud
+1. Go to **share.streamlit.io**
+2. Sign in with **GitHub**
+3. Click **"New app"**
+4. Select your repo `ai-resume-selector`
+5. Set main file as `app.py`
+6. Click **"Deploy"** ✅
+
+---
+
+### ⏳ Wait 2-3 minutes
+Streamlit will install all packages and launch your app with a **public URL** like:
+```
+https://yourname-ai-resume-selector.streamlit.app
