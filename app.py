@@ -15,6 +15,14 @@ from datetime import datetime
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "resume123"
 
+# ─────────────────────────────────────────
+# JOB DESCRIPTION (SET BY ADMIN)
+# ─────────────────────────────────────────
+JOB_DESCRIPTION = """
+We are looking for a Data Scientist with experience in Python, machine learning,
+data analysis, SQL, pandas, scikit-learn, and data visualization.
+"""
+
 st.set_page_config(page_title="AI Resume Selector", page_icon="🤖", layout="wide")
 
 # ─────────────────────────────────────────
@@ -41,19 +49,6 @@ def get_google_sheet():
     sheet = client.open("ai-resume-selector").sheet1
     return sheet
 
-def save_to_sheet(candidate, score, text, job_desc):
-    try:
-        sheet = get_google_sheet()
-        sheet.append_row([
-            candidate,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            round(float(score), 2),
-            text[:200],
-            job_desc[:200]
-        ])
-    except Exception as e:
-        st.warning(f"⚠️ Could not save to database: {e}")
-
 # ─────────────────────────────────────────
 # HELPER FUNCTIONS
 # ─────────────────────────────────────────
@@ -78,13 +73,13 @@ def extract_text(file):
         return extract_text_from_docx(file)
     return ""
 
-def rank_resumes(jd, resumes):
-    cleaned_jd = clean_text(jd)
-    cleaned_resumes = [clean_text(r) for r in resumes]
+def get_match_score(resume_text):
+    cleaned_jd = clean_text(JOB_DESCRIPTION)
+    cleaned_resume = clean_text(resume_text)
     jd_embedding = model.encode([cleaned_jd])
-    resume_embeddings = model.encode(cleaned_resumes)
-    scores = cosine_similarity(jd_embedding, resume_embeddings).flatten()
-    return scores
+    resume_embedding = model.encode([cleaned_resume])
+    score = cosine_similarity(jd_embedding, resume_embedding).flatten()[0]
+    return round(float(score) * 100, 2)
 
 # ─────────────────────────────────────────
 # SESSION STATE
@@ -93,11 +88,58 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 # ─────────────────────────────────────────
+# CANDIDATE PAGE
+# ─────────────────────────────────────────
+def candidate_page():
+    st.title("📄 Submit Your CV")
+    st.markdown("### Welcome! Please fill in your details and upload your resume.")
+    st.info(f"📋 **Current Job Opening:**\n\n{JOB_DESCRIPTION}")
+
+    st.divider()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input("👤 Full Name")
+    with col2:
+        email = st.text_input("📧 Email Address")
+
+    uploaded_file = st.file_uploader(
+        "📂 Upload Your CV (PDF or DOCX)",
+        type=["pdf", "docx"]
+    )
+
+    if st.button("📤 Submit CV", use_container_width=True):
+        if not name:
+            st.warning("⚠️ Please enter your full name.")
+        elif not email:
+            st.warning("⚠️ Please enter your email address.")
+        elif not uploaded_file:
+            st.warning("⚠️ Please upload your CV.")
+        else:
+            with st.spinner("⏳ Submitting your CV..."):
+                try:
+                    text = extract_text(uploaded_file)
+                    score = get_match_score(text)
+                    sheet = get_google_sheet()
+                    sheet.append_row([
+                        name,
+                        email,
+                        uploaded_file.name,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        score,
+                        text[:300]
+                    ])
+                    st.success("✅ Your CV has been submitted successfully! We will contact you soon.")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"❌ Error submitting CV: {e}")
+
+# ─────────────────────────────────────────
 # ADMIN LOGIN PAGE
 # ─────────────────────────────────────────
 def login_page():
     st.title("🔐 Admin Login")
-    st.markdown("Only the hiring manager can access results.")
+    st.markdown("Only the hiring manager can access this panel.")
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -111,11 +153,10 @@ def login_page():
                 st.error("❌ Invalid credentials!")
 
 # ─────────────────────────────────────────
-# MAIN APP
+# ADMIN PANEL
 # ─────────────────────────────────────────
-def main_app():
-    st.title("🤖 AI Resume Selector")
-    st.markdown("Upload CVs and rank candidates automatically using BERT.")
+def admin_page():
+    st.title("🤖 AI Resume Selector — Admin Panel")
 
     if st.button("🚪 Logout"):
         st.session_state.logged_in = False
@@ -123,97 +164,61 @@ def main_app():
 
     st.divider()
 
-    # ── Job Description ──
-    st.subheader("📝 Step 1 — Enter Job Description")
-    job_description = st.text_area(
-        "Paste the job description here:",
-        height=150,
-        placeholder="We are looking for a Data Scientist with Python, ML, SQL..."
-    )
+    # ── Update Job Description ──
+    st.subheader("📝 Current Job Description")
+    st.info(JOB_DESCRIPTION)
+    st.caption("⚠️ To change the job description, edit JOB_DESCRIPTION in app.py on GitHub.")
 
-    # ── Upload CVs ──
-    st.subheader("📂 Step 2 — Upload Candidate CVs")
-    uploaded_files = st.file_uploader(
-        "Upload PDF or DOCX resumes",
-        type=["pdf", "docx"],
-        accept_multiple_files=True
-    )
-
-    # ── Run Ranking ──
-    if st.button("🚀 Rank Candidates", use_container_width=True):
-        if not job_description:
-            st.warning("⚠️ Please enter a job description.")
-        elif not uploaded_files:
-            st.warning("⚠️ Please upload at least one CV.")
-        else:
-            with st.spinner("⏳ Analyzing resumes with BERT..."):
-                names, texts = [], []
-                for file in uploaded_files:
-                    text = extract_text(file)
-                    names.append(file.name)
-                    texts.append(text)
-
-                scores = rank_resumes(job_description, texts)
-
-                # Save each candidate to Google Sheets
-                for name, text, score in zip(names, texts, scores):
-                    save_to_sheet(name, score, text, job_description)
-
-                results_df = pd.DataFrame({
-                    "Rank": range(1, len(names) + 1),
-                    "Candidate": names,
-                    "Match Score (%)": (scores * 100).round(2),
-                }).sort_values("Match Score (%)", ascending=False).reset_index(drop=True)
-                results_df["Rank"] = range(1, len(results_df) + 1)
-
-            # ── Results ──
-            st.divider()
-            st.subheader("🏆 Ranked Candidates")
-            st.success(f"🥇 Best Match: **{results_df.iloc[0]['Candidate']}** — {results_df.iloc[0]['Match Score (%)']}%")
-            st.dataframe(results_df, use_container_width=True)
-
-            # ── Bar Chart ──
-            st.subheader("📊 Score Comparison")
-            st.bar_chart(results_df.set_index("Candidate")["Match Score (%)"])
-
-            # ── Download ──
-            st.subheader("💾 Download Results")
-            csv = results_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="📥 Download Shortlisted Candidates CSV",
-                data=csv,
-                file_name="shortlisted_candidates.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
-    # ── View Database ──
     st.divider()
-    st.subheader("🗄️ Candidate Database")
-    if st.button("📋 Load All Candidates from Database"):
+
+    # ── View All Candidates ──
+    st.subheader("🗄️ All Submitted Candidates")
+    if st.button("📋 Load Candidates from Database", use_container_width=True):
         with st.spinner("Loading..."):
             try:
                 sheet = get_google_sheet()
                 data = sheet.get_all_records()
                 if data:
                     db_df = pd.DataFrame(data)
-                    st.dataframe(db_df, use_container_width=True)
+                    db_df.columns = ["Name", "Email", "CV File", "Upload Time", "Match Score (%)", "Text Preview"]
+                    db_df = db_df.sort_values("Match Score (%)", ascending=False).reset_index(drop=True)
+                    db_df.index += 1
+
+                    # Show best candidate
+                    st.success(f"🥇 Best Match: **{db_df.iloc[0]['Name']}** — {db_df.iloc[0]['Match Score (%)']}%")
+
+                    st.dataframe(db_df[["Name", "Email", "CV File", "Upload Time", "Match Score (%)"]], use_container_width=True)
+
+                    # Bar chart
+                    st.subheader("📊 Candidate Score Comparison")
+                    st.bar_chart(db_df.set_index("Name")["Match Score (%)"])
+
+                    # Download
                     csv = db_df.to_csv(index=False).encode("utf-8")
                     st.download_button(
-                        "📥 Download Full Database",
+                        "📥 Download All Candidates CSV",
                         data=csv,
                         file_name="all_candidates.csv",
-                        mime="text/csv"
+                        mime="text/csv",
+                        use_container_width=True
                     )
                 else:
-                    st.info("📭 No candidates in database yet.")
+                    st.info("📭 No candidates have submitted their CVs yet.")
             except Exception as e:
                 st.error(f"❌ Error loading database: {e}")
 
 # ─────────────────────────────────────────
 # ROUTER
 # ─────────────────────────────────────────
-if st.session_state.logged_in:
-    main_app()
+page = st.sidebar.selectbox(
+    "Navigation",
+    ["📄 Submit CV", "🔐 Admin Panel"]
+)
+
+if page == "🔐 Admin Panel":
+    if st.session_state.logged_in:
+        admin_page()
+    else:
+        login_page()
 else:
-    login_page()
+    candidate_page()
