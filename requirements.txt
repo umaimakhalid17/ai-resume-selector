@@ -4,14 +4,5 @@ scikit-learn
 pdfplumber
 python-docx
 gspread
-oauth2client
-```
-
----
-
-### ▶️ Step 2 — Create Google Sheet
-1. Go to **sheets.google.com**
-2. Create a new sheet named **`ai-resume-selector`**
-3. Add these headers in Row 1:
-```
-Candidate | Upload Time | Match Score | Text Preview | Job Description
+google-auth
+google-auth-oauthlib
