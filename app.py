@@ -13,7 +13,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 
 ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "resume123"
+ADMIN_PASSWORD = "resume124"
 
 st.set_page_config(page_title="AI Resume Selector", page_icon="🤖", layout="wide")
 
